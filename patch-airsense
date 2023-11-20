@@ -1,5 +1,3 @@
-#!/bin/bash
-
 die() { echo >&2 "$*" ; exit 1 ; }	
 
 IN=$1
@@ -20,9 +18,15 @@ patch() {
 	dd bs=1 seek=$offset conv=notrunc of="$OUT" status=none
 }
 
-echo "533b91127aa22e05b933db203ad56c449dc12a8c3fd62f57bd88c472a8061775  $IN"\
-| sha256sum --check \
-|| die "$IN: wrong hash"
+shasum=$( shasum -a 256 $IN | cut -f 1 -d " " )
+if [ $shasum = "533b91127aa22e05b933db203ad56c449dc12a8c3fd62f57bd88c472a8061775" ]; then
+	version="401"
+elif [ $shasum = "363a204ba217f31223e929365d58b8f5ce038a7681e362fe157e190c2eacbd30" ]; then
+	version="306"
+else
+	die "$IN: incompatible firmware version."
+fi
+echo "Found firmware version: $version"
 
 cp "$IN" "$OUT" || die "$OUT: copy failed"
 
@@ -41,9 +45,12 @@ patch_code() {
 	#if you want to add the extra breath mode
 	BUILD_FLAGS=$(( BUILD_FLAGS | (1 << 0) ))
 
-	if [ -r breath.bin ] ; then
+	if [ -r breath.bin ] && [ $version = "401" ] ; then
 		echo "Including breath.bin"
 		cat breath.bin | patch 0xbb734 || die "binary patch failed"
+	elif [ -r breath.bin ] && [ $version = "306" ] ; then
+                echo "Including breath.bin"
+                cat breath.bin | patch 0xbb4d4 || die "binary patch failed"
 	else
 		die "breath.bin not found, did you run make?"
 	fi 
@@ -115,18 +122,18 @@ gui_config () {
 	done
 }
 
-patch_code
+#patch_code
 unlock_ui_limits
 extra_debug
 extra_modes
-extra_menu
-#all_menu
+#extra_menu
+all_menu
 gui_config
 
-FLAGSTR=$(printf 'FLAGS=0x%02x' $BUILD_FLAGS)
-printf $FLAGSTR | patch 0x17588
+#FLAGSTR=$(printf 'FLAGS=0x%02x' $BUILD_FLAGS)
+#printf $FLAGSTR | patch 0x17588
 
-COMMIT_HASH=$(git log -n1 --format=format:"%H" | head -c 7)
-printf 'GIT=%s\x00' $COMMIT_HASH | patch 0x17764
+#COMMIT_HASH=$(git log -n1 --format=format:"%H" | head -c 7)
+#printf 'GIT=%s\x00' $COMMIT_HASH | patch 0x17764
 
-sha256sum $OUT
+shasum -a 256 $OUT
